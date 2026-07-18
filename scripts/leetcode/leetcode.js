@@ -1,4 +1,4 @@
-import { LeetCodeV1, LeetCodeV2 } from './versions.js';
+import { appendProblemToReadme, sortTopicsInReadme } from './readmeTopics.js';
 import setupManualSubmitBtn from './submitBtn.js';
 import {
   debounce,
@@ -10,7 +10,7 @@ import {
   LeetHubError,
   mergeStats,
 } from './util.js';
-import { appendProblemToReadme, sortTopicsInReadme } from './readmeTopics.js';
+import { LeetCodeV1, LeetCodeV2 } from './versions.js';
 
 /* Commit messages */
 const readmeMsg = 'Create README - LeetHub';
@@ -271,8 +271,8 @@ async function uploadGitWith409Retry(code, problemName, filename, commitMsg, opt
   const sha = optionals?.sha
     ? optionals.sha
     : storageData.stats?.shas?.[problemName]?.[filename] !== undefined
-    ? storageData.stats.shas[problemName][filename]
-    : '';
+      ? storageData.stats.shas[problemName][filename]
+      : '';
 
   try {
     return await upload(
@@ -385,11 +385,9 @@ async function updateReadmeTopicTagsWithProblem(topicTags, problemName) {
   let newSha;
 
   try {
-    const { content, sha } = await getGitHubFile(
-      leethub_token,
-      leethub_hook,
-      readmeFilename
-    ).then(resp => resp.json());
+    const { content, sha } = await getGitHubFile(leethub_token, leethub_hook, readmeFilename).then(
+      resp => resp.json()
+    );
     readme = content;
     stats.shas[readmeFilename] = { '': sha };
     await api.storage.local.set({ stats });
@@ -411,7 +409,76 @@ async function updateReadmeTopicTagsWithProblem(topicTags, problemName) {
     WAIT_FOR_GITHUB_API_TO_NOT_THROW_409_MS
   );
 }
+async function askForLinkedInPost() {
+  return new Promise(resolve => {
+    let remaining = 10;
 
+    const popup = document.createElement('div');
+
+    popup.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 999999;
+      background: #1e1e1e;
+      color: white;
+      padding: 18px;
+      border-radius: 12px;
+      width: 320px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.35);
+      font-family: sans-serif;
+    `;
+
+    popup.innerHTML = `
+      <h3 style="margin:0 0 10px 0;">
+        Post this solution on LinkedIn?
+      </h3>
+
+      <p id="timer">
+        Auto cancel in ${remaining}s
+      </p>
+
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button id="lh-yes">Yes</button>
+        <button id="lh-no">No</button>
+      </div>
+    `;
+
+    document.body.appendChild(popup);
+
+    const finish = value => {
+      chrome.storage.local.set({
+        linkedinPost: value,
+      });
+
+      popup.remove();
+      resolve(value);
+    };
+
+    document.getElementById('lh-yes').onclick = () => {
+      finish(true);
+    };
+
+    document.getElementById('lh-no').onclick = () => {
+      finish(false);
+    };
+
+    const interval = setInterval(() => {
+      remaining--;
+
+      const timer = document.getElementById('timer');
+
+      if (timer) {
+        timer.textContent = `Auto cancel in ${remaining}s`;
+      }
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+        finish(false);
+      }
+    }, 1000);
+  });
+}
 /** @param {LeetCodeV1 | LeetCodeV2} leetCode */
 function loader(leetCode) {
   let iterations = 0;
@@ -433,6 +500,11 @@ function loader(leetCode) {
 
       // For v2, query LeetCode API for submission results
       await leetCode.init();
+      const shouldPost = await askForLinkedInPost();
+
+      if (!shouldPost) {
+        console.log('LinkedIn post skipped.');
+      }
 
       const probStats = leetCode.parseStats();
       if (!probStats) {
@@ -476,6 +548,18 @@ function loader(leetCode) {
       /* Upload code to Git */
       const code = leetCode.findCode(probStats);
       const uploadCode = uploadGitWith409Retry(encode(code), problemName, filename, probStats);
+      const { linkedinPost } = await chrome.storage.local.get('linkedinPost');
+
+      const uploadMeta = uploadGitWith409Retry(
+        encode(
+          JSON.stringify({
+            linkedin: !!linkedinPost,
+          })
+        ),
+        problemName,
+        'post.json',
+        'Save LinkedIn preference'
+      );
 
       /* Group problem into its relevant topics */
       const updateRepoReadMe = updateReadmeTopicTagsWithProblem(
@@ -483,7 +567,13 @@ function loader(leetCode) {
         problemName
       );
 
-      const newSHAs = await Promise.all([uploadReadMe, uploadNotes, uploadCode, updateRepoReadMe]);
+      const newSHAs = await Promise.all([
+        uploadReadMe,
+        uploadNotes,
+        uploadCode,
+        uploadMeta,
+        updateRepoReadMe,
+      ]);
 
       leetCode.markUploaded();
 
@@ -564,8 +654,8 @@ const submitBtnObserver = new MutationObserver(function (_mutations, observer) {
     textareaList.length === 4
       ? textareaList[2]
       : textareaList.length === 2
-      ? textareaList[0]
-      : textareaList[1];
+        ? textareaList[0]
+        : textareaList[1];
 
   if (v1SubmitBtn) {
     observer.disconnect();
