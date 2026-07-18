@@ -394,19 +394,9 @@ async function updateReadmeTopicTagsWithProblem(topicTags, problemName) {
     stats.shas[readmeFilename] = { '': sha };
     await api.storage.local.set({ stats });
   } catch (err) {
-    if (err.message === '404') {
-      newSha = await createRepoReadme();
+    console.log('README error:', err);
 
-      return delay(
-        () =>
-          uploadGitWith409Retry(encode(defaultRepoReadme), readmeFilename, '', updateReadmeMsg, {
-            sha: newSha,
-          }),
-        WAIT_FOR_GITHUB_API_TO_NOT_THROW_409_MS
-      );
-    }
-
-    throw err;
+    return;
   }
   readme = decode(readme);
   for (let topic of topicTags) {
