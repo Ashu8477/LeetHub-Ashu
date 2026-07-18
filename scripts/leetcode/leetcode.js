@@ -561,6 +561,12 @@ function loader(leetCode) {
       const uploadCode = uploadGitWith409Retry(encode(code), problemName, filename, probStats);
       const { linkedinPost } = await chrome.storage.local.get('linkedinPost');
 
+      console.log('Problem:', problemName);
+
+      console.log('LinkedIn value:', await chrome.storage.local.get('linkedinPost'));
+
+      console.log('About to upload post.json');
+
       const uploadMeta = uploadGitWith409Retry(
         encode(
           JSON.stringify({
