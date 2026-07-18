@@ -271,8 +271,8 @@ async function uploadGitWith409Retry(code, problemName, filename, commitMsg, opt
   const sha = optionals?.sha
     ? optionals.sha
     : storageData.stats?.shas?.[problemName]?.[filename] !== undefined
-      ? storageData.stats.shas[problemName][filename]
-      : '';
+    ? storageData.stats.shas[problemName][filename]
+    : '';
 
   try {
     return await upload(
@@ -385,16 +385,27 @@ async function updateReadmeTopicTagsWithProblem(topicTags, problemName) {
   let newSha;
 
   try {
-    const { content, sha } = await getGitHubFile(leethub_token, leethub_hook, readmeFilename).then(
-      resp => resp.json()
-    );
+    const { content, sha } = await getGitHubFile(
+      leethub_token,
+      leethub_hook,
+      readmeFilename
+    ).then(resp => resp.json());
     readme = content;
     stats.shas[readmeFilename] = { '': sha };
     await api.storage.local.set({ stats });
   } catch (err) {
     if (err.message === '404') {
       newSha = await createRepoReadme();
+
+      return delay(
+        () =>
+          uploadGitWith409Retry(encode(defaultRepoReadme), readmeFilename, '', updateReadmeMsg, {
+            sha: newSha,
+          }),
+        WAIT_FOR_GITHUB_API_TO_NOT_THROW_409_MS
+      );
     }
+
     throw err;
   }
   readme = decode(readme);
@@ -654,8 +665,8 @@ const submitBtnObserver = new MutationObserver(function (_mutations, observer) {
     textareaList.length === 4
       ? textareaList[2]
       : textareaList.length === 2
-        ? textareaList[0]
-        : textareaList[1];
+      ? textareaList[0]
+      : textareaList[1];
 
   if (v1SubmitBtn) {
     observer.disconnect();
