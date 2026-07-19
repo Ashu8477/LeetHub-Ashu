@@ -1,7 +1,5 @@
 import { appendProblemToReadme, sortTopicsInReadme } from './readmeTopics.js';
-import setupManualSubmitBtn from './submitBtn.js';
 import {
-  debounce,
   delay,
   DIFFICULTY,
   getBrowser,
@@ -90,10 +88,10 @@ const upload = async (token, hook, content, problem, filename, sha, message) => 
   };
 
   const res = await fetch(URL, options);
+
   if (!res.ok) {
     throw new LeetHubError(res.status, { cause: res });
   }
-  console.log(`Successfully committed ${getPath(problem, filename)} to github`);
 
   const body = await res.json();
   //TODO: Think, should we be setting stats state here?
@@ -447,12 +445,21 @@ async function askForLinkedInPost() {
 
     document.body.appendChild(popup);
 
+    let finished = false;
+
     const finish = value => {
+      if (finished) return;
+
+      finished = true;
+
+      clearInterval(interval);
+
       chrome.storage.local.set({
         linkedinPost: value,
       });
 
       popup.remove();
+
       resolve(value);
     };
 
@@ -548,39 +555,51 @@ function loader(leetCode) {
 
       /* Upload code to Git */
       const code = leetCode.findCode(probStats);
-      const uploadCode = uploadGitWith409Retry(encode(code), problemName, filename, probStats);
-      const { linkedinPost } = await chrome.storage.local.get('linkedinPost');
 
-      console.log('Problem:', problemName);
+      const uploadCode = () =>
+        uploadGitWith409Retry(
+          encode(code),
+          problemName,
+          filename,
+          `${probStats.runtime} - LeetHub`,
+          {
+            difficulty: leetCode.difficulty,
+          }
+        );
 
-      console.log('LinkedIn value:', await chrome.storage.local.get('linkedinPost'));
+      const uploadMeta = async () => {
+        const { linkedinPost } = await chrome.storage.local.get('linkedinPost');
 
-      console.log('About to upload post.json');
+        return uploadGitWith409Retry(
+          encode(
+            JSON.stringify({
+              linkedin: !!linkedinPost,
+            })
+          ),
+          problemName,
+          'post.json',
+          'Save LinkedIn preference'
+        );
+      };
 
-      const uploadMeta = uploadGitWith409Retry(
-        encode(
-          JSON.stringify({
-            linkedin: !!linkedinPost,
-          })
-        ),
-        problemName,
-        'post.json',
-        'Save LinkedIn preference'
-      );
+      const updateRepoReadMe = () =>
+        updateReadmeTopicTagsWithProblem(leetCode.submissionData?.question?.topicTags, problemName);
 
-      /* Group problem into its relevant topics */
-      const updateRepoReadMe = updateReadmeTopicTagsWithProblem(
-        leetCode.submissionData?.question?.topicTags,
-        problemName
-      );
+      if (uploadReadMe) {
+        await uploadReadMe;
+      }
 
-      const newSHAs = await Promise.all([
-        uploadReadMe,
-        uploadNotes,
-        uploadCode,
-        uploadMeta,
-        updateRepoReadMe,
-      ]);
+      if (uploadNotes) {
+        await uploadNotes;
+      }
+
+      await uploadCode();
+
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      await uploadMeta();
+
+      await updateRepoReadMe();
 
       leetCode.markUploaded();
 
@@ -712,20 +731,20 @@ api.storage.local.get('isSync', data => {
   }
 });
 
-setupManualSubmitBtn(
-  debounce(
-    () => {
-      const leetCode = new LeetCodeV2();
-      // Manual submission event can only fire when we have submissionId. Simply retrieve it.
-      const submissionId = window.location.href.match(/leetcode\.com\/.*\/submissions\/(\d+)/)[1];
-      leetCode.submissionId = submissionId;
-      loader(leetCode);
-      return;
-    },
-    5000,
-    true
-  )
-);
+// setupManualSubmitBtn(
+//   debounce(
+//     () => {
+//       const leetCode = new LeetCodeV2();
+//       // Manual submission event can only fire when we have submissionId. Simply retrieve it.
+//       const submissionId = window.location.href.match(/leetcode\.com\/.*\/submissions\/(\d+)/)[1];
+//       leetCode.submissionId = submissionId;
+//       loader(leetCode);
+//       return;
+//     },
+//     5000,
+//     true
+//   )
+// );
 
 class LeetHubNetworkError extends LeetHubError {
   constructor(response) {
